@@ -1,3 +1,4 @@
+
 @echo off
 
 set CommonCompilerFlags= -MTd -nologo -Gm- -GR- -EHa- -Od -Oi -WX -W4 -wd4201 -wd4100 -wd4189 -wd4505 -DASTROIDS_INTERNAL=1 -DASTROIDS_SLOW=1 -DASTROIDS_WIN32=1 -FC -Z7 
