@@ -34,6 +34,12 @@
 
 #define ArrayCount(Array) (sizeof(Array) / sizeof((Array)[0]))
 
+struct win32_read_file_result
+{
+    uint32 ContentSize;
+    void *Contents;
+};
+
 struct win32_offscreen_buffer
 {
     // NOTE(felipe): Pixels are always 32-bit size, memory order GG BB RR XX.
