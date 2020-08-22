@@ -35,17 +35,21 @@ global_variable bool32 GlobalRunning;
 global_variable win32_offscreen_buffer GlobalBackBuffer;
 global_variable bool32 GlobalOpenGLLoaded;
 
-global_variable int Texture01;
-global_variable int GlobalShaderProgram01;
-global_variable int GlobalVertexArray01;
+global_variable uint32 Texture01;
+global_variable uint32 GlobalShaderProgram01;
+global_variable uint32 GlobalVertexArray01;
 
 typedef BOOL WINAPI wgl_swap_interval_ext(int interval);
 global_variable wgl_swap_interval_ext *wglSwapInteval;
 
-char *StringCopy(char *Destination, const char *Source, uint32 Size)
+internal char *
+StringCopy(char *Destination, const char *Source, uint32 Size)
 {
-   char *Temp;
-   Temp = Destination;  
+   char *Result;
+
+   Assert(Destination && Source && Size);
+
+   Result = Destination;  
    for (uint32 I = 0;
         I < Size;
         ++I)
@@ -53,7 +57,7 @@ char *StringCopy(char *Destination, const char *Source, uint32 Size)
       *Destination++ = *Source++;
    }
 
-   return Temp;
+   return Result;
 }
 
 internal bool32
@@ -258,72 +262,38 @@ Win32ResizeDIBSection(win32_offscreen_buffer *Buffer, int Width, int Height)
 }
 
 internal void
-RenderBitmap()
-{ 
-    win32_read_file_result Bitmap = Win32ReadEntireFile("bitmaps/Morado.bmp");
-    char Header[54];
-    StringCopy(Header, (char *)Bitmap.Contents, 54);
-    if(Header[0] == 'B' &&
-       Header[1] == 'M')
-    {
-        uint64 DataPos = *(int*) & (Header[0x0A]);
-        uint32 ImageSize = *(int*) & (Header[0x22]);
-        uint32 Width = *(int*) & (Header[0x12]);
-        uint32 Height = *(int*) & (Header[0x16]);
-        uint32 BitsPerPixel = *(int *) & (Header[0x1C]);
+RenderQuad(uint32 Texture, real32 X, real32 Y)
+{
+    glUseProgram(GlobalShaderProgram01);
 
-        if(ImageSize == 0)
-        {
-            ImageSize = Width * Height * 3;
-        }
-        
-        if (DataPos == 0)
-        {
-            DataPos = 54;
-        }
-
-        unsigned char *Data;
-
-        Data = ((unsigned char *)Bitmap.Contents + DataPos);
-        
-        uint32 TextureID;
-        glGenTextures(1, &TextureID);
+    int TextureShaderLocation = glGetUniformLocation(GlobalShaderProgram01, "u_Texture");
+    glUniform1i(TextureShaderLocation, 0);
+    int PosShaderLocation = glGetUniformLocation(GlobalShaderProgram01, "u_Pos");
+    glUniform2f(PosShaderLocation, X, Y);
     
-        glBindTexture(GL_TEXTURE_2D, TextureID);
-        
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, Width, Height, 0, GL_RGB, GL_UNSIGNED_BYTE, Data);
-        
-        int TextureShaderLocation = glGetUniformLocation(GlobalShaderProgram01, "Bitmap");
-        glUseProgram(GlobalShaderProgram01);
-        glUniform1i(TextureShaderLocation, 0);
-
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, TextureID);
-        
-        glBindVertexArray(GlobalVertexArray01);
-        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-        glBindVertexArray(0);
-    }
-    else
-    {
-        // TODO(felipe): Logging
-    }
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, Texture);
+    
+    glBindVertexArray(GlobalVertexArray01);
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+    glBindVertexArray(0);
 }
 
 internal void
-GameUpdateAndRender()
+GameUpdateAndRender(game_state *GameState)
 {
-    RenderBitmap();
+    glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    RenderQuad(Texture01, GameState->PlayerX, GameState->PlayerY);
+
 }
 
 internal void
 Win32UpdateWindow(win32_offscreen_buffer *Buffer,
                   HDC DeviceContext, int WindowWidth, int WindowHeight)
 {   
-    glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-
-    GameUpdateAndRender();
+//    GameUpdateAndRender();
     
     SwapBuffers(DeviceContext);
 }
@@ -398,8 +368,22 @@ Win32MainWindowCallback(HWND Window, UINT Message,
     return Result;
 }
 
+struct game_button_state
+{
+    int HalfTransitionCount;
+    bool32 EndedDown;
+};
+
+struct game_input
+{
+    game_button_state W;
+    game_button_state S;
+    game_button_state A;
+    game_button_state D;
+};
+
 internal void
-Win32ProcessPendingMessages()
+Win32ProcessPendingMessages(game_state *GameState, game_input *Input)
 {
     MSG Message;
     
@@ -419,10 +403,43 @@ Win32ProcessPendingMessages()
             {
                 uint32 VKCode = (uint32)Message.wParam;
 
-                bool WasDown = ((Message.lParam & (1 << 30)) != 0);
-                bool IsDown = ((Message.lParam & (1 << 31)) == 0);
+                bool32 WasDown = ((Message.lParam & (1 << 30)) != 0);
+                bool32 IsDown = ((Message.lParam & (1 << 31)) == 0);
+
                 if(IsDown != WasDown)
                 {
+                    if(VKCode == 'W')
+                    {
+                        if(Input->W.EndedDown != IsDown)
+                        {
+                            Input->W.EndedDown = IsDown;
+                            ++Input->W.HalfTransitionCount;
+                        }
+                    }
+                    else if(VKCode == 'S')
+                    {
+                        if(Input->S.EndedDown != IsDown)
+                        {
+                            Input->S.EndedDown = IsDown;
+                            ++Input->S.HalfTransitionCount;
+                        }
+                    }
+                    else if(VKCode == 'A')
+                    {
+                        if(Input->A.EndedDown != IsDown)
+                        {
+                            Input->A.EndedDown = IsDown;
+                            ++Input->A.HalfTransitionCount;
+                        }
+                    }
+                    else if(VKCode == 'D')
+                    {
+                        if(Input->D.EndedDown != IsDown)
+                        {
+                            Input->D.EndedDown = IsDown;
+                            ++Input->D.HalfTransitionCount;
+                        }
+                    }
                 }
 
                 bool32 AltKeyWasDown = (Message.lParam & (1 << 29));
@@ -439,6 +456,72 @@ Win32ProcessPendingMessages()
             } break;
         }
     }
+}
+
+internal uint32
+OpenGLLoadImageTexure(char *Filepath)
+{
+    uint32 Result = 0;
+    
+    win32_read_file_result Bitmap = Win32ReadEntireFile(Filepath);
+    char Header[54];
+    StringCopy(Header, (char *)Bitmap.Contents, 54);
+    if(Header[0] == 'B' &&
+       Header[1] == 'M')
+    {
+        uint64 DataPos = *(int*) & (Header[0x0A]);
+        uint32 ImageSize = *(int*) & (Header[0x22]);
+        uint32 Width = *(int*) & (Header[0x12]);
+        uint32 Height = *(int*) & (Header[0x16]);
+        uint32 BitsPerPixel = *(int *) & (Header[0x1C]);
+
+        if(ImageSize == 0)
+        {
+            ImageSize = Width * Height * 3;
+        }
+        
+        if (DataPos == 0)
+        {
+            DataPos = 54;
+        }
+
+        uint32 Format;
+        if(BitsPerPixel == 24)
+        {
+            Format = GL_BGR;
+//          Format = GL_RGB;
+        }
+        else if(BitsPerPixel == 32)
+        {
+            Format = GL_BGRA;
+//          Format = GL_RGBA;
+        }
+        else
+        {
+            // TODO(felipe): Logging.
+            Format = GL_RGB;
+        }
+
+        unsigned char *Data;
+
+        Data = ((unsigned char *)Bitmap.Contents + DataPos);
+
+        glGenTextures(1, &Result);
+        glBindTexture(GL_TEXTURE_2D, Result);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);   
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, Width, Height, 0, Format, GL_UNSIGNED_BYTE, (void *)Data);
+    }
+    else
+    {
+        // TODO(felipe): Logging
+    }
+
+    return Result;
 }
 
 INT WINAPI
@@ -500,7 +583,7 @@ WinMain(HINSTANCE Instance,
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
             glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW); 
             
-            char *vertexShaderSource = (char *)Win32ReadEntireFile("shaders/BitmapVert.glsl").Contents;
+            char *vertexShaderSource = (char *)Win32ReadEntireFile("shaders/TextureVert.glsl").Contents;
 
             unsigned int vertexShader;
             vertexShader = glCreateShader(GL_VERTEX_SHADER);
@@ -517,7 +600,7 @@ WinMain(HINSTANCE Instance,
                 Assert(!"Vertex Shader compilation error.");
             }
     
-            char *fragmentShaderSource = (char *)Win32ReadEntireFile("shaders/BitmapFrag.glsl").Contents;
+            char *fragmentShaderSource = (char *)Win32ReadEntireFile("shaders/TextureFrag.glsl").Contents;
 
         
             unsigned int fragmentShader;
@@ -561,16 +644,11 @@ WinMain(HINSTANCE Instance,
             unsigned int VAO;
             glGenVertexArrays(1, &VAO);
 
-            // ..:: Initialization code :: ..
-            // 1. bind Vertex Array Object
             glBindVertexArray(VAO);
-            // 2. copy our vertices array in a vertex buffer for OpenGL to use
             glBindBuffer(GL_ARRAY_BUFFER, VBO);
             glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-            // 3. copy our index array in a element buffer for OpenGL to use
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
             glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_STATIC_DRAW);
-            // 4. then set the vertex attributes pointers
             glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)0);
             glEnableVertexAttribArray(0); 
             glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)(3 * sizeof(float)));
@@ -582,68 +660,61 @@ WinMain(HINSTANCE Instance,
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-            win32_read_file_result Bitmap = Win32ReadEntireFile("bitmaps/mario.bmp");
-            char Header[54];
-            StringCopy(Header, (char *)Bitmap.Contents, 54);
-            if(Header[0] == 'B' &&
-               Header[1] == 'M')
-            {
-                uint64 DataPos = *(int*) & (Header[0x0A]);
-                uint32 ImageSize = *(int*) & (Header[0x22]);
-                uint32 Width = *(int*) & (Header[0x12]);
-                uint32 Height = *(int*) & (Header[0x16]);
-                uint32 BitsPerPixel = *(int *) & (Header[0x1C]);
-
-                if(ImageSize == 0)
-                {
-                    ImageSize = Width * Height * 3;
-                }
-        
-                if (DataPos == 0)
-                {
-                    DataPos = 54;
-                }
-
-                unsigned char *Data;
-
-                Data = ((unsigned char *)Bitmap.Contents + DataPos);
-        
-                uint32 TextureID;
-                glGenTextures(1, &TextureID);
-    
-                glBindTexture(GL_TEXTURE_2D, TextureID);
-        
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, Width, Height, 0, GL_RGB, GL_UNSIGNED_BYTE, Data);
-        
-                int TextureShaderLocation = glGetUniformLocation(GlobalShaderProgram01, "Bitmap");
-                glUseProgram(GlobalShaderProgram01);
-                glUniform1i(TextureShaderLocation, 0);
-
-                glActiveTexture(GL_TEXTURE0);
-                glBindTexture(GL_TEXTURE_2D, TextureID);
-        
-                glBindVertexArray(GlobalVertexArray01);
-                glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
-                glBindVertexArray(0);
-            }
-            else
-            {
-                // TODO(felipe): Logging
-            }
-            //
-            //
+            Texture01 = OpenGLLoadImageTexure("bitmaps/mario.bmp");
             
             GlobalShaderProgram01 = shaderProgram;
             GlobalVertexArray01 = VAO;
+
+            {
+                RECT ClientRect;
+                GetClientRect(Window, &ClientRect);
+                int Width = ClientRect.right - ClientRect.left;
+                int Height = ClientRect.bottom - ClientRect.top;
+                Win32ResizeDIBSection(&GlobalBackBuffer, Width, Height);
+            
+                glViewport(0, 0, Width, Height);
+            }
+
+            game_state GameState = {};
+            game_input Input = {};
             
             GlobalRunning = true;
             
             while(GlobalRunning)
             {
-                Win32ProcessPendingMessages();
-                
                 // \/ MAIN LOOP HERE
-                GameUpdateAndRender();
+                
+                Win32ProcessPendingMessages(&GameState, &Input);
+                
+                RECT ClientRect;
+                GetClientRect(Window, &ClientRect);
+                int Width = ClientRect.right - ClientRect.left;
+                int Height = ClientRect.bottom - ClientRect.top;
+                glViewport(0, 0, Width, Height);
+
+                real32 PlayerSpeed = 0.005f;
+                
+                if(Input.W.EndedDown)
+                {
+                    GameState.PlayerY += PlayerSpeed;
+                }
+                if(Input.S.EndedDown)
+                {
+                    GameState.PlayerY -= PlayerSpeed;
+                }
+                if(Input.A.EndedDown)
+                {
+                    GameState.PlayerX -= PlayerSpeed;
+                }
+                if(Input.D.EndedDown)
+                {
+                    GameState.PlayerX += PlayerSpeed;
+                }
+                
+                
+                GameUpdateAndRender(&GameState);
+
+                Win32UpdateWindow(&GlobalBackBuffer, DeviceContext, Width, Height);
             }
         }
         else

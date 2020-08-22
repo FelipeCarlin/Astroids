@@ -51,6 +51,12 @@ struct win32_offscreen_buffer
     int BytesPerPixel;
 };
 
+struct game_state
+{
+    real32 PlayerX;
+    real32 PlayerY;
+};
+
 
 #define WIN32_ASTROIDS_H
 #endif
