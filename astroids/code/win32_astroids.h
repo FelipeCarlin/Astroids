@@ -53,6 +53,9 @@ struct win32_offscreen_buffer
 
 struct game_state
 {
+    real32 PlayerVelX;
+    real32 PlayerVelY;
+    
     real32 PlayerX;
     real32 PlayerY;
 };

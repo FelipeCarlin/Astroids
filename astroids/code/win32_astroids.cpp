@@ -692,25 +692,69 @@ WinMain(HINSTANCE Instance,
                 int Height = ClientRect.bottom - ClientRect.top;
                 glViewport(0, 0, Width, Height);
 
-                real32 PlayerSpeed = 0.005f;
+                real32 PlayerAcceleration = 0.001f;
+
+                if(GameState.PlayerVelX < 0.0f)
+                {
+                    GameState.PlayerVelX += (-GameState.PlayerVelX*0.01f) + 0.0001f;
+                }
+                else if(GameState.PlayerVelX > 0)
+                {
+                    GameState.PlayerVelX -= (GameState.PlayerVelX*0.01f) + 0.0001f;
+                }
+                if(GameState.PlayerVelY < 0.0f)
+                {
+                    GameState.PlayerVelY += (-GameState.PlayerVelY*0.01f) + 0.0001f;
+                }
+                else if(GameState.PlayerVelY > 0)
+                {
+                    GameState.PlayerVelY -= (GameState.PlayerVelY*0.01f) + 0.0001f;
+                }
                 
                 if(Input.W.EndedDown)
                 {
-                    GameState.PlayerY += PlayerSpeed;
+                    GameState.PlayerVelY += PlayerAcceleration;
                 }
                 if(Input.S.EndedDown)
                 {
-                    GameState.PlayerY -= PlayerSpeed;
+                    GameState.PlayerVelY -= PlayerAcceleration;
                 }
                 if(Input.A.EndedDown)
                 {
-                    GameState.PlayerX -= PlayerSpeed;
+                    GameState.PlayerVelX -= PlayerAcceleration;
                 }
                 if(Input.D.EndedDown)
                 {
-                    GameState.PlayerX += PlayerSpeed;
+                    GameState.PlayerVelX += PlayerAcceleration;
                 }
                 
+                if(GameState.PlayerVelX > 0.0005f ||
+                   GameState.PlayerVelX < -0.0005f)
+                {
+                    GameState.PlayerX += GameState.PlayerVelX;
+                }
+                if(GameState.PlayerVelY > 0.0005f ||
+                   GameState.PlayerVelY < -0.0005f)
+                {
+                    GameState.PlayerY += GameState.PlayerVelY;
+                }
+
+                if(GameState.PlayerX > 1.0f)
+                {
+                    GameState.PlayerX = -1.0f;
+                }
+                else if(GameState.PlayerX < -1.0f)
+                {
+                    GameState.PlayerX = 1.0f;
+                }
+                if(GameState.PlayerY > 1.0f)
+                {
+                    GameState.PlayerY = -1.0f;
+                }
+                else if(GameState.PlayerY < -1.0f)
+                {
+                    GameState.PlayerY = 1.0f;
+                }
                 
                 GameUpdateAndRender(&GameState);
 
