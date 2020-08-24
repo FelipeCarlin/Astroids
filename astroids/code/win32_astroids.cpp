@@ -14,6 +14,8 @@
 #define local_persist static
 #define global_variable static
 
+#define Pi32 3.14159265359f
+
 typedef uint8_t uint8;
 typedef uint16_t uint16;
 typedef uint32_t uint32;
@@ -262,14 +264,21 @@ Win32ResizeDIBSection(win32_offscreen_buffer *Buffer, int Width, int Height)
 }
 
 internal void
-RenderQuad(uint32 Texture, real32 X, real32 Y)
+RenderQuad(uint32 Texture, real32 X, real32 Y, real32 Rot)
 {
     glUseProgram(GlobalShaderProgram01);
 
+    real32 AspectRatio = (real32)GlobalBackBuffer.Width/(real32)GlobalBackBuffer.Height;
+    int AspectShaderLocation = glGetUniformLocation(GlobalShaderProgram01, "u_Aspect");
+    glUniform1f(AspectShaderLocation, AspectRatio);
+    
     int TextureShaderLocation = glGetUniformLocation(GlobalShaderProgram01, "u_Texture");
     glUniform1i(TextureShaderLocation, 0);
     int PosShaderLocation = glGetUniformLocation(GlobalShaderProgram01, "u_Pos");
     glUniform2f(PosShaderLocation, X, Y);
+    // NOTE(felipe): Rotation is in degrees.
+    int RotShaderLocation = glGetUniformLocation(GlobalShaderProgram01, "u_Rot");
+    glUniform1f(RotShaderLocation, Rot);
     
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, Texture);
@@ -285,7 +294,10 @@ GameUpdateAndRender(game_state *GameState)
     glClearColor(0.2f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    RenderQuad(Texture01, GameState->PlayerX, GameState->PlayerY);
+    local_persist real32 QuadRotation;
+    QuadRotation += 0.5f;
+    
+    RenderQuad(Texture01, GameState->PlayerX, GameState->PlayerY, QuadRotation);
 
 }
 
