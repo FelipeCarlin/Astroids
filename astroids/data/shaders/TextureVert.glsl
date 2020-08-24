@@ -8,6 +8,7 @@ out vec2 v_UV;
 uniform float u_Aspect;
 uniform vec2 u_Pos;
 uniform float u_Rot;
+uniform float u_Scale;
 
 void main()
 {
@@ -17,10 +18,19 @@ void main()
     float cs = cos(radiansRot);
     float sn = sin(radiansRot);
 
-    float x = (a_Pos.x * cs - a_Pos.y * sn) + u_Pos.x;
-    float y = (a_Pos.x * sn + a_Pos.y * cs) + u_Pos.y;
+    // NOTE(felipe): Scale.
+    float xScaled = a_Pos.x * u_Scale;
+    float yScaled = a_Pos.y * u_Scale;
 
-    y *= u_Aspect;
+    // NOTE(felipe): Rotation.
+    float xRot = (xScaled * cs - yScaled * sn);
+    float yRot = (xScaled * sn + yScaled * cs);
+
+    // NOTE(felipe): Translation.
+    float x = xRot + u_Pos.x;
+    float y = yRot + u_Pos.y;
+
+    y /= u_Aspect;
 
     gl_Position = vec4(x, y, a_Pos.z, 1.0);
 }

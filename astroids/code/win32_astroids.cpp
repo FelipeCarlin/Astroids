@@ -264,7 +264,7 @@ Win32ResizeDIBSection(win32_offscreen_buffer *Buffer, int Width, int Height)
 }
 
 internal void
-RenderQuad(uint32 Texture, real32 X, real32 Y, real32 Rot)
+RenderQuad(uint32 Texture, real32 X, real32 Y, real32 Rotation, real32 Scale)
 {
     glUseProgram(GlobalShaderProgram01);
 
@@ -278,7 +278,10 @@ RenderQuad(uint32 Texture, real32 X, real32 Y, real32 Rot)
     glUniform2f(PosShaderLocation, X, Y);
     // NOTE(felipe): Rotation is in degrees.
     int RotShaderLocation = glGetUniformLocation(GlobalShaderProgram01, "u_Rot");
-    glUniform1f(RotShaderLocation, Rot);
+    glUniform1f(RotShaderLocation, Rotation);
+    int ScaleShaderLocation = glGetUniformLocation(GlobalShaderProgram01, "u_Scale");
+    glUniform1f(ScaleShaderLocation, Scale);
+    
     
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, Texture);
@@ -297,7 +300,7 @@ GameUpdateAndRender(game_state *GameState)
     local_persist real32 QuadRotation;
     QuadRotation += 0.5f;
     
-    RenderQuad(Texture01, GameState->PlayerX, GameState->PlayerY, QuadRotation);
+    RenderQuad(Texture01, GameState->PlayerX, GameState->PlayerY, QuadRotation, 0.05f);
 
 }
 
@@ -473,6 +476,7 @@ Win32ProcessPendingMessages(game_state *GameState, game_input *Input)
 internal uint32
 OpenGLLoadImageTexure(char *Filepath)
 {
+    // TODO(felipe): Fix Alpha.
     uint32 Result = 0;
     
     win32_read_file_result Bitmap = Win32ReadEntireFile(Filepath);
@@ -481,56 +485,70 @@ OpenGLLoadImageTexure(char *Filepath)
     if(Header[0] == 'B' &&
        Header[1] == 'M')
     {
-        uint64 DataPos = *(int*) & (Header[0x0A]);
-        uint32 ImageSize = *(int*) & (Header[0x22]);
-        uint32 Width = *(int*) & (Header[0x12]);
-        uint32 Height = *(int*) & (Header[0x16]);
-        uint32 BitsPerPixel = *(int *) & (Header[0x1C]);
+        uint32 DIBHeaderSize = *(uint32 *) & (Header[0xE]);
+        uint16 ColorPlanes = *(uint16 *) & (Header[0x1A]);
+        uint32 Compression = *(uint32 *) & (Header[0x1E]);
+        uint32 DataPos = *(uint32 *) & (Header[0x0A]);
+        uint32 ImageSize = *(uint32 *) & (Header[0x22]);
+        uint32 Width = *(uint32 *) & (Header[0x12]);
+        uint32 Height = *(uint32 *) & (Header[0x16]);
+        uint16 BitsPerPixel = *(uint16 *) & (Header[0x1C]);
 
-        if(ImageSize == 0)
+        if(DIBHeaderSize =< 40)
         {
-            ImageSize = Width * Height * 3;
-        }
+            if(ImageSize == 0)
+            {
+                ImageSize = Width * Height * 3;
+            }
         
-        if (DataPos == 0)
-        {
-            DataPos = 54;
-        }
+            if (DataPos == 0)
+            {
+                DataPos = 54;
+            }
 
-        uint32 Format;
-        if(BitsPerPixel == 24)
-        {
-            Format = GL_BGR;
-//          Format = GL_RGB;
-        }
-        else if(BitsPerPixel == 32)
-        {
-            Format = GL_BGRA;
-//          Format = GL_RGBA;
+            uint32 Format;
+            uint32 InternalFormat;
+            if(BitsPerPixel == 24)
+            {
+                Format = GL_BGR;
+                InternalFormat = GL_RGB8;
+            }
+            else if(BitsPerPixel == 32)
+            {
+                Format = GL_BGRA;
+                InternalFormat = GL_RGBA8;
+            }
+            else
+            {
+                // TODO(felipe): Logging.
+                Assert(!"Could not load bitmap.");
+            
+                Format = GL_BGR;
+                InternalFormat = GL_RGB8;
+            }
+
+            unsigned char *Data;
+
+            Data = ((unsigned char *)Bitmap.Contents + DataPos);
+
+            glGenTextures(1, &Result);
+            glBindTexture(GL_TEXTURE_2D, Result);
+
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);   
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+            glTexImage2D(GL_TEXTURE_2D, 0, InternalFormat, Width, Height, 0, Format, GL_UNSIGNED_BYTE, (void *)Data);
         }
         else
         {
             // TODO(felipe): Logging.
-            Format = GL_RGB;
         }
-
-        unsigned char *Data;
-
-        Data = ((unsigned char *)Bitmap.Contents + DataPos);
-
-        glGenTextures(1, &Result);
-        glBindTexture(GL_TEXTURE_2D, Result);
-
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);   
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, Width, Height, 0, Format, GL_UNSIGNED_BYTE, (void *)Data);
     }
     else
     {
-        // TODO(felipe): Logging
+        // TODO(felipe): Logging.
     }
 
     return Result;
@@ -573,10 +591,10 @@ WinMain(HINSTANCE Instance,
 
             float vertices[] =
                 {
-                     0.5f,  0.5f, 0.0f,  1.0f, 1.0f, // top right
-                     0.5f, -0.5f, 0.0f,  1.0f, 0.0f, // bottom right
-                    -0.5f, -0.5f, 0.0f,  0.0f, 0.0f, // bottom left
-                    -0.5f,  0.5f, 0.0f,   0.0f, 1.0f // top left 
+                     1.0f,  1.0f, 0.0f,  1.0f, 1.0f, // top right
+                     1.0f, -1.0f, 0.0f,  1.0f, 0.0f, // bottom right
+                    -1.0f, -1.0f, 0.0f,  0.0f, 0.0f, // bottom left
+                    -1.0f,  1.0f, 0.0f,  0.0f, 1.0f // top left 
                 };
 
             unsigned int indices[] =
@@ -672,7 +690,7 @@ WinMain(HINSTANCE Instance,
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-            Texture01 = OpenGLLoadImageTexure("bitmaps/mario.bmp");
+            Texture01 = OpenGLLoadImageTexure("bitmaps/astroidBraker.bmp");
             
             GlobalShaderProgram01 = shaderProgram;
             GlobalVertexArray01 = VAO;
@@ -751,6 +769,7 @@ WinMain(HINSTANCE Instance,
                     GameState.PlayerY += GameState.PlayerVelY;
                 }
 
+                // NOTE(felipe): Force player to be on the screen.
                 if(GameState.PlayerX > 1.0f)
                 {
                     GameState.PlayerX = -1.0f;
@@ -767,6 +786,7 @@ WinMain(HINSTANCE Instance,
                 {
                     GameState.PlayerY = 1.0f;
                 }
+
                 
                 GameUpdateAndRender(&GameState);
 
